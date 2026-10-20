@@ -1,3 +1,4 @@
+pub mod light_alc_style;
 pub mod telemetry;
 
 use std::cell::RefCell;
@@ -356,7 +357,10 @@ fn pane_row_background(
         };
         Some(color.with_opacity(opacity))
     } else if is_selected {
-        Some(internal_colors::fg_overlay_2(theme))
+        Some(
+            light_alc_style::light_alc_neutral_selected_fill(theme)
+                .unwrap_or_else(|| internal_colors::fg_overlay_2(theme)),
+        )
     } else if is_in_multi_selection && is_hovered {
         // Hovering a multi-selected row steps one shade darker so the hover
         // stays visually distinguishable from the in-selection highlight.
@@ -415,11 +419,16 @@ fn render_pane_row_element(
     } = props;
     let is_selected = is_active_tab && is_focused;
     let show_pin = FeatureFlag::PinnedTabs.is_enabled() && is_pinned && !container_is_hovered;
+    let light_alc_pill =
+        is_selected && pane_color.is_none() && light_alc_style::is_light_alc_theme(theme);
     let mut row = Hoverable::new(mouse_state, move |state| {
         // Hovered or selected rows always fully round; otherwise derive the
         // resting radius from the row's stack position.
         let corner_radius = if state.is_hovered() || is_selected {
-            CornerRadius::with_all(Radius::Pixels(ROW_CORNER_RADIUS))
+            CornerRadius::with_all(Radius::Pixels(light_alc_style::selected_row_corner_radius(
+                theme,
+                ROW_CORNER_RADIUS,
+            )))
         } else {
             stack_position.corner_radius()
         };
@@ -438,8 +447,12 @@ fn render_pane_row_element(
             container = container.with_background(background);
         }
 
+        if light_alc_pill {
+            container = container.with_drop_shadow(DropShadow::default());
+        }
+
         let pane: Box<dyn Element> = container
-            .with_border(Border::all(1.).with_border_fill(if is_selected {
+            .with_border(Border::all(1.).with_border_fill(if is_selected && !light_alc_pill {
                 internal_colors::fg_overlay_3(theme).into()
             } else {
                 ElementFill::None
@@ -1731,8 +1744,13 @@ fn render_vertical_tabs_panel(
     // Wrap the panel in a `Hoverable` so right-clicking the empty area of the
     // vertical tabs panel opens the tab configs dropdown.
     let inner = Hoverable::new(state.panel_right_click_mouse_state.clone(), |_| {
+        let panel_bg = if light_alc_style::is_light_alc_theme(theme) {
+            ThemeFill::Solid(light_alc_style::LIGHT_ALC_PANEL_BG)
+        } else {
+            internal_colors::fg_overlay_1(theme)
+        };
         Container::new(panel_with_popup)
-            .with_background(internal_colors::fg_overlay_1(theme))
+            .with_background(panel_bg)
             .finish()
     })
     .on_click(|ctx, _, _| {
@@ -1939,7 +1957,10 @@ fn render_groups(
         .with_main_axis_size(MainAxisSize::Min)
         .with_cross_axis_alignment(CrossAxisAlignment::Stretch);
     if !uses_outer_group_container {
-        groups = groups.with_spacing(TABS_MODE_ITEM_SPACING);
+        groups = groups.with_spacing(light_alc_style::tabs_mode_item_spacing(
+            theme,
+            TABS_MODE_ITEM_SPACING,
+        ));
     }
 
     // Consecutive tabs sharing a group_id collapse into a single group container.
@@ -2206,7 +2227,7 @@ fn render_tab_group_internal(
         let row_spacing = if stack_panes_flush {
             0.
         } else {
-            GROUP_ITEM_SPACING
+            light_alc_style::group_item_spacing(theme, GROUP_ITEM_SPACING)
         };
         let build_rows = || {
             let mut rows = Flex::column()
@@ -2369,12 +2390,14 @@ fn render_tab_group_internal(
                 ));
             }
 
+            let body_bottom =
+                light_alc_style::group_body_bottom_padding(theme, GROUP_BODY_BOTTOM_PADDING);
             let mut body_padding = Padding::uniform(0.)
                 .with_left(GROUP_HORIZONTAL_PADDING)
                 .with_right(GROUP_HORIZONTAL_PADDING)
-                .with_bottom(GROUP_BODY_BOTTOM_PADDING);
+                .with_bottom(body_bottom);
             if !show_header {
-                body_padding = body_padding.with_top(GROUP_BODY_BOTTOM_PADDING);
+                body_padding = body_padding.with_top(body_bottom);
             }
             group.add_child(
                 Container::new(build_rows())
@@ -2422,7 +2445,7 @@ fn render_tab_group_internal(
             let action_button_band = if FeatureFlag::GroupedTabs.is_enabled() {
                 GROUPED_TAB_ACTION_BUTTON_BAND
             } else {
-                GROUP_BODY_BOTTOM_PADDING
+                light_alc_style::group_body_bottom_padding(theme, GROUP_BODY_BOTTOM_PADDING)
             };
             let mut container = Container::new(build_rows()).with_background(background);
             if FeatureFlag::GroupedTabs.is_enabled() && stack_panes_flush {
@@ -2513,7 +2536,7 @@ fn render_tab_group_internal(
         {
             0.
         } else {
-            GROUP_HEADER_VERTICAL_PADDING
+            light_alc_style::group_header_vertical_padding(theme, GROUP_HEADER_VERTICAL_PADDING)
         };
         stack.add_positioned_overlay_child(
             action_buttons,
@@ -3033,7 +3056,7 @@ fn render_grouped_tab_container(
     {
         0.
     } else {
-        TABS_MODE_ITEM_SPACING
+        light_alc_style::tabs_mode_item_spacing(theme, TABS_MODE_ITEM_SPACING)
     };
     let container = Hoverable::new(mouse_states.container.clone(), |hover_state| {
         let mut content = Flex::column()
@@ -3301,13 +3324,15 @@ fn render_group_header(props: GroupHeaderProps<'_>, app: &AppContext) -> Box<dyn
                 .with_color(title_color.into())
                 .finish()
         })
-        .with_padding(
+        .with_padding({
+            let header_pad =
+                light_alc_style::group_header_vertical_padding(theme, GROUP_HEADER_VERTICAL_PADDING);
             Padding::uniform(0.)
                 .with_left(GROUP_HORIZONTAL_PADDING)
                 .with_right(GROUP_HORIZONTAL_PADDING)
-                .with_top(GROUP_HEADER_VERTICAL_PADDING)
-                .with_bottom(GROUP_HEADER_VERTICAL_PADDING),
-        )
+                .with_top(header_pad)
+                .with_bottom(header_pad)
+        })
         .finish()
     })
     .on_click(move |ctx, _, _| {
