@@ -4,6 +4,16 @@ use super::*;
 use crate::user_config;
 use crate::util::color::OPAQUE;
 
+#[test]
+fn light_alc_is_registered_with_spec_colors() {
+    let config = WarpThemeConfig::new();
+    let theme = config.theme(&ThemeKind::LightAlc);
+    assert_eq!(theme.name().as_deref(), Some("light-alc"));
+    assert_eq!(theme.background(), Fill::Solid(ColorU::from_u32(0xFFFFFFFF)));
+    assert!(ThemeKind::LightAlc.matches("alc"));
+    assert_eq!(ThemeKind::LightAlc.to_string(), "light-alc");
+}
+
 fn custom_theme_json(path: &str) -> serde_json::Value {
     serde_json::json!({
         "name": "My Theme",

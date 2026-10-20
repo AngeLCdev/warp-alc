@@ -285,6 +285,19 @@ pub fn light_theme() -> WarpTheme {
     )
 }
 
+pub fn light_alc() -> WarpTheme {
+    WarpTheme::new(
+        Fill::Solid(ColorU::from_u32(0xFFFFFFFF)),
+        ColorU::new(17, 17, 17, OPAQUE),
+        Fill::Solid(ColorU::from_u32(0x647E90FF)),
+        None,
+        Some(Details::Lighter),
+        light_mode_colors(),
+        None,
+        Some("light-alc".to_string()),
+    )
+}
+
 pub(super) fn dracula() -> WarpTheme {
     WarpTheme::new(
         Fill::Solid(ColorU::from_u32(0x282A36FF)),
