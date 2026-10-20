@@ -250,3 +250,9 @@ if FeatureFlag::YourNewFeature.is_enabled() {
 ### Exhaustive Matching
 
 When adding/editing match statements, avoid using the wildcard _ when at all possible. Exhaustive matching is helpful for ensuring that all variants are handled, especially when adding new variants to enums in the future.
+
+## Cursor Cloud specific instructions
+
+- Run the headless TUI here. `./script/run` is the GUI and needs a display; `./script/run-tui` (or `CARGO_BUILD_JOBS=2 cargo build -p warp_tui --bin warp-tui-oss`) is the binary that runs on this VM. Keep `CARGO_BUILD_JOBS=2` — a higher job count runs out of memory even with the swap file enabled at boot.
+- The OSS TUI starts logged out. Enter on the welcome screen opens the device-login page. `WARP_API_KEY` signs in without a browser. gcloud is installed for SSH integration tests and is not authenticated.
+- `/usr/bin/c++` on the base image is clang and selects GCC 14. Native crates fail to find `cstdint` unless `libstdc++-14-dev` is installed; the environment install does that.
