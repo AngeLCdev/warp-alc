@@ -345,6 +345,7 @@ fn pane_row_background(
     is_in_multi_selection: bool,
     is_hovered: bool,
     is_being_dragged: bool,
+    parent_group_colored: bool,
     theme: &WarpTheme,
 ) -> Option<ThemeFill> {
     if let Some(color) = pane_color {
@@ -357,10 +358,14 @@ fn pane_row_background(
         };
         Some(color.with_opacity(opacity))
     } else if is_selected {
-        Some(
-            light_alc_style::light_alc_neutral_selected_fill(theme)
-                .unwrap_or_else(|| internal_colors::fg_overlay_2(theme)),
-        )
+        if light_alc_style::should_use_neutral_selected_pill(theme, false, parent_group_colored) {
+            Some(
+                light_alc_style::light_alc_neutral_selected_fill(theme)
+                    .unwrap_or_else(|| internal_colors::fg_overlay_2(theme)),
+            )
+        } else {
+            Some(internal_colors::fg_overlay_2(theme))
+        }
     } else if is_in_multi_selection && is_hovered {
         // Hovering a multi-selected row steps one shade darker so the hover
         // stays visually distinguishable from the in-selection highlight.
@@ -404,6 +409,7 @@ fn render_pane_row_element(
         is_in_multi_selection,
         is_in_multi_tab_selection,
         pane_color,
+        parent_group_colored,
         badge_mouse_states: _,
         detail_hover_state,
         display_granularity,
@@ -419,8 +425,12 @@ fn render_pane_row_element(
     } = props;
     let is_selected = is_active_tab && is_focused;
     let show_pin = FeatureFlag::PinnedTabs.is_enabled() && is_pinned && !container_is_hovered;
-    let light_alc_pill =
-        is_selected && pane_color.is_none() && light_alc_style::is_light_alc_theme(theme);
+    let light_alc_pill = is_selected
+        && light_alc_style::should_use_neutral_selected_pill(
+            theme,
+            pane_color.is_some(),
+            parent_group_colored,
+        );
     let mut row = Hoverable::new(mouse_state, move |state| {
         // Hovered or selected rows always fully round; otherwise derive the
         // resting radius from the row's stack position.
@@ -442,13 +452,14 @@ fn render_pane_row_element(
             is_in_multi_selection,
             state.is_hovered(),
             is_being_dragged,
+            parent_group_colored,
             theme,
         ) {
             container = container.with_background(background);
         }
 
         if light_alc_pill {
-            container = container.with_drop_shadow(DropShadow::default());
+            container = container.with_drop_shadow(light_alc_style::light_alc_pill_drop_shadow());
         }
 
         let pane: Box<dyn Element> = container
@@ -856,6 +867,8 @@ struct PaneProps<'a> {
     /// otherwise the single-pane menu.
     is_in_multi_tab_selection: bool,
     pane_color: Option<ThemeFill>,
+    /// True when this row sits inside a tab group that has a user color (container tint).
+    parent_group_colored: bool,
     badge_mouse_states: PaneRowBadgeMouseStates,
     detail_hover_state: VerticalTabsDetailHoverState,
     display_granularity: VerticalTabsDisplayGranularity,
@@ -877,6 +890,7 @@ struct PaneRowState {
     mouse_state: MouseStateHandle,
     title_mouse_state: Option<MouseStateHandle>,
     pane_color: Option<ThemeFill>,
+    parent_group_colored: bool,
     badge_mouse_states: PaneRowBadgeMouseStates,
 }
 
@@ -1250,6 +1264,7 @@ impl VerticalTabsPanelState {
                                     mouse_state: ms,
                                     title_mouse_state: None,
                                     pane_color: None,
+                                    parent_group_colored: false,
                                     badge_mouse_states: PaneRowBadgeMouseStates::default(),
                                 },
                                 self.detail_hover_state(tab.pane_group.window_id(app)),
@@ -1859,28 +1874,29 @@ fn render_groups(
                                     tab_index == workspace.active_tab_index,
                                     false,
                                     false,
-                                    PaneRowState {
-                                        mouse_state: ms,
-                                        title_mouse_state: None,
-                                        pane_color: None,
-                                        badge_mouse_states: PaneRowBadgeMouseStates::default(),
-                                    },
-                                    state.detail_hover_state(workspace.window_id),
-                                    display_granularity,
-                                    true,
-                                    title_override.clone(),
-                                    None,
-                                    None,
-                                    false,
-                                    None,
-                                    false,
-                                    None,
-                                    tab.pinned,
-                                    false,
-                                    None,
-                                    app,
-                                )
-                                .is_some_and(|props| {
+                                PaneRowState {
+                                    mouse_state: ms,
+                                    title_mouse_state: None,
+                                    pane_color: None,
+                                    parent_group_colored: false,
+                                    badge_mouse_states: PaneRowBadgeMouseStates::default(),
+                                },
+                                state.detail_hover_state(workspace.window_id),
+                                display_granularity,
+                                true,
+                                title_override.clone(),
+                                None,
+                                None,
+                                false,
+                                None,
+                                false,
+                                None,
+                                tab.pinned,
+                                false,
+                                None,
+                                app,
+                            )
+                            .is_some_and(|props| {
                                     pane_matches_query(&props, &query_lower, app)
                                 });
                             };
@@ -1895,6 +1911,7 @@ fn render_groups(
                                     mouse_state,
                                     title_mouse_state: None,
                                     pane_color: None,
+                                    parent_group_colored: false,
                                     badge_mouse_states: PaneRowBadgeMouseStates::default(),
                                 },
                                 state.detail_hover_state(workspace.window_id),
@@ -2026,6 +2043,7 @@ fn render_groups(
                         insert_after_index,
                     },
                     false, // in_tab_group
+                    false, // parent_group_colored
                     app,
                 ));
                 i += 1;
@@ -2087,6 +2105,7 @@ fn render_tab_group(
     filtered_pane_ids: Option<&[PaneId]>,
     drag_state: TabGroupDragState,
     in_tab_group: bool,
+    parent_group_colored: bool,
     app: &AppContext,
 ) -> Box<dyn Element> {
     render_tab_group_internal(
@@ -2098,6 +2117,7 @@ fn render_tab_group(
         drag_state,
         false,
         in_tab_group,
+        parent_group_colored,
         app,
     )
 }
@@ -2112,6 +2132,7 @@ fn render_tab_group_internal(
     drag_state: TabGroupDragState,
     for_drag_ghost: bool,
     in_tab_group: bool,
+    parent_group_colored: bool,
     app: &AppContext,
 ) -> Box<dyn Element> {
     let appearance = Appearance::as_ref(app);
@@ -2224,11 +2245,8 @@ fn render_tab_group_internal(
         // GroupedTabs: stack panes flush in Panes view.
         let stack_panes_flush = FeatureFlag::GroupedTabs.is_enabled()
             && matches!(display_granularity, VerticalTabsDisplayGranularity::Panes);
-        let row_spacing = if stack_panes_flush {
-            0.
-        } else {
-            light_alc_style::group_item_spacing(theme, GROUP_ITEM_SPACING)
-        };
+        let row_spacing =
+            light_alc_style::inter_row_spacing(theme, GROUP_ITEM_SPACING, stack_panes_flush);
         let build_rows = || {
             let mut rows = Flex::column()
                 .with_main_axis_size(MainAxisSize::Min)
@@ -2273,6 +2291,7 @@ fn render_tab_group_internal(
                         mouse_state: row_mouse_state.clone(),
                         title_mouse_state: None,
                         pane_color,
+                        parent_group_colored,
                         badge_mouse_states,
                     },
                     state.detail_hover_state(workspace.window_id),
@@ -2333,6 +2352,7 @@ fn render_tab_group_internal(
                         mouse_state: row_mouse_state.clone(),
                         title_mouse_state: title_mouse_states.get(pane_id).cloned(),
                         pane_color,
+                        parent_group_colored,
                         badge_mouse_states,
                     },
                     state.detail_hover_state(workspace.window_id),
@@ -2751,6 +2771,7 @@ pub(crate) fn render_tab_group_for_drag_ghost(
         drag_state,
         true,  // for_drag_ghost
         false, // in_tab_group
+        false, // parent_group_colored
         app,
     )
 }
@@ -3051,13 +3072,10 @@ fn render_grouped_tab_container(
 
     // GroupedTabs: zero inter-tab gap in Panes mode (each tab already has
     // its own wrapper). Other modes keep `TABS_MODE_ITEM_SPACING`.
-    let member_tab_spacing = if FeatureFlag::GroupedTabs.is_enabled()
-        && matches!(resolved_mode, VerticalTabsResolvedMode::Panes)
-    {
-        0.
-    } else {
-        light_alc_style::tabs_mode_item_spacing(theme, TABS_MODE_ITEM_SPACING)
-    };
+    let member_tabs_flush = FeatureFlag::GroupedTabs.is_enabled()
+        && matches!(resolved_mode, VerticalTabsResolvedMode::Panes);
+    let member_tab_spacing =
+        light_alc_style::inter_tab_spacing(theme, TABS_MODE_ITEM_SPACING, member_tabs_flush);
     let container = Hoverable::new(mouse_states.container.clone(), |hover_state| {
         let mut content = Flex::column()
             .with_main_axis_size(MainAxisSize::Min)
@@ -3121,6 +3139,7 @@ fn render_grouped_tab_container(
 
         // Collapsed groups hide member rows in the panel chrome; the members remain in `workspace.tabs`.
         if !is_collapsed {
+            let parent_group_colored = group.color.resolve(None).is_some();
             let last_member_idx = members.len().saturating_sub(1);
             for (i, (tab_index, filtered_pane_ids)) in members.iter().enumerate() {
                 let tab = &workspace.tabs[*tab_index];
@@ -3142,6 +3161,7 @@ fn render_grouped_tab_container(
                     filtered_pane_ids.as_deref(),
                     drag_state,
                     true,
+                    parent_group_colored,
                     app,
                 );
                 content.add_child(
@@ -4005,6 +4025,7 @@ impl<'a> PaneProps<'a> {
             is_in_multi_selection,
             is_in_multi_tab_selection,
             pane_color: pane_row_state.pane_color,
+            parent_group_colored: pane_row_state.parent_group_colored,
             badge_mouse_states: pane_row_state.badge_mouse_states,
             detail_hover_state,
             display_granularity,
@@ -6935,6 +6956,7 @@ fn detail_pane_props<'a>(
             mouse_state: MouseStateHandle::default(),
             title_mouse_state: None,
             pane_color: None,
+            parent_group_colored: false,
             badge_mouse_states,
         },
         state.detail_hover_state(workspace.window_id),
